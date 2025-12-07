@@ -69,7 +69,15 @@ impl Executor {
     }
 
     fn get_download_dir() -> PathBuf {
-        // 优先使用 exe 所在目录
+        // 1. 优先：用户默认下载目录 (%USERPROFILE%\Downloads)
+        if let Some(user_profile) = std::env::var_os("USERPROFILE") {
+            let user_downloads = PathBuf::from(user_profile).join("Downloads");
+            if user_downloads.exists() || fs::create_dir_all(&user_downloads).is_ok() {
+                return user_downloads;
+            }
+        }
+
+        // 2. 备用：exe 所在目录
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let download_dir = exe_dir.join("Downloads");
@@ -84,7 +92,7 @@ impl Executor {
             }
         }
 
-        // 备用：临时目录
+        // 3. 最后备用：临时目录
         std::env::temp_dir().join("WForge").join("Downloads")
     }
 
@@ -92,16 +100,49 @@ impl Executor {
         &self.download_dir
     }
 
+    /// 获取 Action 的文件名
+    pub fn get_filename(action: &Action) -> Option<&'static str> {
+        match action {
+            Action::Download { filename, .. } => *filename,
+            Action::GitHubRelease { filename, .. } => *filename,
+            Action::WebScrape { filename, .. } => *filename,
+            Action::PowerShell { .. } => None,
+        }
+    }
+
+    /// 检查文件是否已存在
+    pub fn file_exists(&self, action: &Action) -> bool {
+        if let Some(filename) = Self::get_filename(action) {
+            self.download_dir.join(filename).exists()
+        } else {
+            false
+        }
+    }
+
+    /// 打开已下载的文件
+    pub fn open_file(&self, action: &Action) -> Result<(), String> {
+        if let Some(filename) = Self::get_filename(action) {
+            let path = self.download_dir.join(filename);
+            if path.exists() {
+                open::that(&path).map_err(|e| format!("打开文件失败: {}", e))
+            } else {
+                Err("文件不存在".to_string())
+            }
+        } else {
+            Err("无法获取文件名".to_string())
+        }
+    }
+
     pub fn execute(&self, item_id: &str, action: &Action, require_admin: bool, logger: &Logger) {
         match action {
             Action::Download { url, filename, sha256 } => {
                 self.download(item_id, url, *filename, *sha256, logger);
             }
-            Action::GitHubRelease { repo, asset_pattern } => {
-                self.download_github_release(item_id, repo, asset_pattern, logger);
+            Action::GitHubRelease { repo, asset_pattern, filename } => {
+                self.download_github_release(item_id, repo, asset_pattern, *filename, logger);
             }
-            Action::WebScrape { page_url, link_regex } => {
-                self.download_web_scrape(item_id, page_url, link_regex, logger);
+            Action::WebScrape { page_url, link_regex, filename } => {
+                self.download_web_scrape(item_id, page_url, link_regex, *filename, logger);
             }
             Action::PowerShell { script, hidden } => {
                 self.run_powershell(script, *hidden, require_admin, logger);
@@ -109,10 +150,11 @@ impl Executor {
         }
     }
 
-    fn download_github_release(&self, item_id: &str, repo: &str, asset_pattern: &str, logger: &Logger) {
+    fn download_github_release(&self, item_id: &str, repo: &str, asset_pattern: &str, filename: Option<&str>, logger: &Logger) {
         let item_id = item_id.to_string();
         let repo = repo.to_string();
         let asset_pattern = asset_pattern.to_string();
+        let filename = filename.map(|s| s.to_string());
         let progress = self.progress.clone();
         let download_dir = self.download_dir.clone();
         let logger = logger.clone();
@@ -128,7 +170,7 @@ impl Executor {
         }
 
         thread::spawn(move || {
-            let result = Self::do_github_release_download(&item_id, &repo, &asset_pattern, &download_dir, &progress, &cancelled, &logger);
+            let result = Self::do_github_release_download(&item_id, &repo, &asset_pattern, filename.as_deref(), &download_dir, &progress, &cancelled, &logger);
 
             // 下载完成，移除进度
             if let Ok(mut p) = progress.lock() {
@@ -150,6 +192,7 @@ impl Executor {
         item_id: &str,
         repo: &str,
         asset_pattern: &str,
+        custom_filename: Option<&str>,
         download_dir: &PathBuf,
         progress: &DownloadProgress,
         cancelled: &Arc<AtomicBool>,
@@ -188,21 +231,25 @@ impl Executor {
         }).ok_or_else(|| format!("未找到匹配 '{}' 的文件", asset_pattern))?;
 
         let download_url = asset["browser_download_url"].as_str().ok_or("未找到下载链接")?;
-        let filename = asset["name"].as_str().ok_or("未找到文件名")?;
+        let original_filename = asset["name"].as_str().ok_or("未找到文件名")?;
+
+        // 使用自定义文件名或原始文件名
+        let filename = custom_filename.unwrap_or(original_filename);
 
         logger.log(&format!(
-            "[GitHub] 找到文件 | name={} | url={}",
-            filename, download_url
+            "[GitHub] 找到文件 | name={} | save_as={} | url={}",
+            original_filename, filename, download_url
         ));
 
         // 下载文件
         Self::do_download(item_id, download_url, Some(filename), None, download_dir, progress, cancelled, logger)
     }
 
-    fn download_web_scrape(&self, item_id: &str, page_url: &str, link_regex: &str, logger: &Logger) {
+    fn download_web_scrape(&self, item_id: &str, page_url: &str, link_regex: &str, filename: Option<&str>, logger: &Logger) {
         let item_id = item_id.to_string();
         let page_url = page_url.to_string();
         let link_regex = link_regex.to_string();
+        let filename = filename.map(|s| s.to_string());
         let progress = self.progress.clone();
         let download_dir = self.download_dir.clone();
         let logger = logger.clone();
@@ -218,7 +265,7 @@ impl Executor {
         }
 
         thread::spawn(move || {
-            let result = Self::do_web_scrape_download(&item_id, &page_url, &link_regex, &download_dir, &progress, &cancelled, &logger);
+            let result = Self::do_web_scrape_download(&item_id, &page_url, &link_regex, filename.as_deref(), &download_dir, &progress, &cancelled, &logger);
 
             // 下载完成，移除进度
             if let Ok(mut p) = progress.lock() {
@@ -240,6 +287,7 @@ impl Executor {
         item_id: &str,
         page_url: &str,
         link_regex: &str,
+        custom_filename: Option<&str>,
         download_dir: &PathBuf,
         progress: &DownloadProgress,
         cancelled: &Arc<AtomicBool>,
@@ -286,12 +334,12 @@ impl Executor {
         };
 
         logger.log(&format!(
-            "[WebScrape] 找到下载链接 | url={}",
-            full_url
+            "[WebScrape] 找到下载链接 | url={} | save_as={:?}",
+            full_url, custom_filename
         ));
 
         // 下载文件
-        Self::do_download(item_id, &full_url, None, None, download_dir, progress, cancelled, logger)
+        Self::do_download(item_id, &full_url, custom_filename, None, download_dir, progress, cancelled, logger)
     }
 
     fn download(&self, item_id: &str, url: &str, filename: Option<&str>, sha256: Option<&str>, logger: &Logger) {

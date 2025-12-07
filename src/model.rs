@@ -12,6 +12,8 @@ pub enum Action {
         repo: &'static str,
         /// 匹配 asset 文件名
         asset_pattern: &'static str,
+        /// 保存的文件名
+        filename: Option<&'static str>,
     },
     /// 从网页爬取下载链接
     WebScrape {
@@ -19,6 +21,8 @@ pub enum Action {
         page_url: &'static str,
         /// 匹配第一个链接
         link_regex: &'static str,
+        /// 保存的文件名
+        filename: Option<&'static str>,
     },
     PowerShell {
         script: &'static str,
@@ -112,6 +116,7 @@ require_admin: false,
         action: Action::GitHubRelease {
             repo: "redtrillix/SpaceSniffer",
             asset_pattern: "*.zip",
+            filename: Some("SpaceSniffer.zip"),
         },
         require_admin: false,
     },
@@ -141,6 +146,7 @@ require_admin: false,
         action: Action::WebScrape {
             page_url: "https://www.teamspeak.com/en/downloads/",
             link_regex: r#"href="(https://files\.teamspeak-services\.com/releases/client/[\d.]+/TeamSpeak3-Client-win64-[\d.]+\.exe)""#,
+            filename: Some("TeamSpeak.exe"),
         },
         require_admin: false,
     },
@@ -170,6 +176,7 @@ require_admin: false,
         action: Action::GitHubRelease {
             repo: "ip7z/7zip",
             asset_pattern: "*-x64.exe",
+            filename: Some("7zip.exe"),
         },
         require_admin: false,
     },
@@ -199,6 +206,7 @@ require_admin: false,
         action: Action::GitHubRelease {
             repo: "clash-verge-rev/clash-verge-rev",
             asset_pattern: "*x64-setup.exe",
+            filename: Some("ClashVerge.exe"),
         },
         require_admin: false,
     },
@@ -213,6 +221,7 @@ require_admin: false,
         action: Action::WebScrape {
             page_url: "https://www.voidtools.com/downloads/",
             link_regex: r#"href="(/Everything-[\d.]+\.x64-Setup\.exe)""#,
+            filename: Some("Everything.exe"),
         },
         require_admin: false,
     },
@@ -258,6 +267,7 @@ require_admin: false,
         action: Action::WebScrape {
             page_url: "https://cdn-go.cn/qq-web/im.qq.com_new/latest/rainbow/windowsConfig.js",
             link_regex: r#""ntDownloadX64Url":"([^"]+)""#,
+            filename: Some("QQSetup.exe"),
         },
         require_admin: false,
     },
@@ -370,6 +380,7 @@ require_admin: false,
         action: Action::GitHubRelease {
             repo: "BeyondDimension/SteamTools",
             asset_pattern: "*_win_x64.exe",
+            filename: Some("SteamTools.exe"),
         },
         require_admin: false,
     },

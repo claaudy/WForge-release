@@ -103,9 +103,15 @@ impl App {
         }).collect()
     }
 
-    fn get_action_button_text(&self, action: &Action) -> &'static str {
+    fn get_action_button_text(&self, action: &Action, file_exists: bool) -> &'static str {
         match action {
-            Action::Download { .. } | Action::GitHubRelease { .. } | Action::WebScrape { .. } => self.i18n.t("download"),
+            Action::Download { .. } | Action::GitHubRelease { .. } | Action::WebScrape { .. } => {
+                if file_exists {
+                    self.i18n.t("open")
+                } else {
+                    self.i18n.t("download")
+                }
+            }
             Action::PowerShell { .. } => self.i18n.t("execute"),
         }
     }
@@ -242,11 +248,22 @@ impl eframe::App for App {
                                             .text(format!("{:.0}%", state.progress() * 100.0))
                                     );
                                 } else {
-                                    // 普通按钮
-                                    let btn_text = self.get_action_button_text(&item.action);
+                                    // 检查文件是否已存在
+                                    let file_exists = self.executor.file_exists(&item.action);
+                                    let btn_text = self.get_action_button_text(&item.action, file_exists);
+
                                     if ui.button(btn_text).clicked() {
-                                        self.logger.log(&format!("执行: {}", item.name));
-                                        self.executor.execute(item.id, &item.action, item.require_admin, &self.logger);
+                                        if file_exists {
+                                            // 文件存在，打开文件
+                                            self.logger.log(&format!("打开: {}", item.name));
+                                            if let Err(e) = self.executor.open_file(&item.action) {
+                                                self.logger.error(&format!("打开失败: {}", e));
+                                            }
+                                        } else {
+                                            // 文件不存在，执行下载/命令
+                                            self.logger.log(&format!("执行: {}", item.name));
+                                            self.executor.execute(item.id, &item.action, item.require_admin, &self.logger);
+                                        }
                                     }
                                 }
                             });
