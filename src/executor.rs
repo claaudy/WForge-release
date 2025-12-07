@@ -3,14 +3,54 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 use crate::logger::Logger;
 use crate::model::Action;
 
-/// 下载进度 (0.0 - 1.0)
-pub type DownloadProgress = Arc<Mutex<HashMap<String, f32>>>;
+/// 下载状态
+#[derive(Clone)]
+pub struct DownloadState {
+    pub downloaded: u64,
+    pub total: u64,
+    pub start_time: Instant,
+    pub cancelled: Arc<AtomicBool>,
+}
+
+impl DownloadState {
+    pub fn new(total: u64) -> Self {
+        Self {
+            downloaded: 0,
+            total,
+            start_time: Instant::now(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// 获取下载进度 (0.0 - 1.0)
+    pub fn progress(&self) -> f32 {
+        if self.total == 0 {
+            0.0
+        } else {
+            self.downloaded as f32 / self.total as f32
+        }
+    }
+
+    /// 获取下载速度 (bytes/sec)
+    pub fn speed(&self) -> f64 {
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            self.downloaded as f64 / elapsed
+        } else {
+            0.0
+        }
+    }
+}
+
+pub type DownloadProgress = Arc<Mutex<HashMap<String, DownloadState>>>;
 
 pub struct Executor {
     pub progress: DownloadProgress,
@@ -77,13 +117,18 @@ impl Executor {
         let download_dir = self.download_dir.clone();
         let logger = logger.clone();
 
+        // 创建取消标志
+        let cancelled = Arc::new(AtomicBool::new(false));
+
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            p.insert(item_id.clone(), 0.0);
+            let mut state = DownloadState::new(0);
+            state.cancelled = cancelled.clone();
+            p.insert(item_id.clone(), state);
         }
 
         thread::spawn(move || {
-            let result = Self::do_github_release_download(&item_id, &repo, &asset_pattern, &download_dir, &progress, &logger);
+            let result = Self::do_github_release_download(&item_id, &repo, &asset_pattern, &download_dir, &progress, &cancelled, &logger);
 
             // 下载完成，移除进度
             if let Ok(mut p) = progress.lock() {
@@ -107,6 +152,7 @@ impl Executor {
         asset_pattern: &str,
         download_dir: &PathBuf,
         progress: &DownloadProgress,
+        cancelled: &Arc<AtomicBool>,
         logger: &Logger,
     ) -> Result<PathBuf, String> {
         logger.log(&format!(
@@ -150,7 +196,7 @@ impl Executor {
         ));
 
         // 下载文件
-        Self::do_download(item_id, download_url, Some(filename), None, download_dir, progress, logger)
+        Self::do_download(item_id, download_url, Some(filename), None, download_dir, progress, cancelled, logger)
     }
 
     fn download_web_scrape(&self, item_id: &str, page_url: &str, link_regex: &str, logger: &Logger) {
@@ -161,13 +207,18 @@ impl Executor {
         let download_dir = self.download_dir.clone();
         let logger = logger.clone();
 
+        // 创建取消标志
+        let cancelled = Arc::new(AtomicBool::new(false));
+
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            p.insert(item_id.clone(), 0.0);
+            let mut state = DownloadState::new(0);
+            state.cancelled = cancelled.clone();
+            p.insert(item_id.clone(), state);
         }
 
         thread::spawn(move || {
-            let result = Self::do_web_scrape_download(&item_id, &page_url, &link_regex, &download_dir, &progress, &logger);
+            let result = Self::do_web_scrape_download(&item_id, &page_url, &link_regex, &download_dir, &progress, &cancelled, &logger);
 
             // 下载完成，移除进度
             if let Ok(mut p) = progress.lock() {
@@ -191,6 +242,7 @@ impl Executor {
         link_regex: &str,
         download_dir: &PathBuf,
         progress: &DownloadProgress,
+        cancelled: &Arc<AtomicBool>,
         logger: &Logger,
     ) -> Result<PathBuf, String> {
         logger.log(&format!(
@@ -239,7 +291,7 @@ impl Executor {
         ));
 
         // 下载文件
-        Self::do_download(item_id, &full_url, None, None, download_dir, progress, logger)
+        Self::do_download(item_id, &full_url, None, None, download_dir, progress, cancelled, logger)
     }
 
     fn download(&self, item_id: &str, url: &str, filename: Option<&str>, sha256: Option<&str>, logger: &Logger) {
@@ -251,13 +303,18 @@ impl Executor {
         let download_dir = self.download_dir.clone();
         let logger = logger.clone();
 
+        // 创建取消标志
+        let cancelled = Arc::new(AtomicBool::new(false));
+
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            p.insert(item_id.clone(), 0.0);
+            let mut state = DownloadState::new(0);
+            state.cancelled = cancelled.clone();
+            p.insert(item_id.clone(), state);
         }
 
         thread::spawn(move || {
-            let result = Self::do_download(&item_id, &url, filename.as_deref(), sha256.as_deref(), &download_dir, &progress, &logger);
+            let result = Self::do_download(&item_id, &url, filename.as_deref(), sha256.as_deref(), &download_dir, &progress, &cancelled, &logger);
 
             // 下载完成，移除进度
             if let Ok(mut p) = progress.lock() {
@@ -282,6 +339,7 @@ impl Executor {
         sha256: Option<&str>,
         download_dir: &PathBuf,
         progress: &DownloadProgress,
+        cancelled: &Arc<AtomicBool>,
         logger: &Logger,
     ) -> Result<PathBuf, String> {
         logger.log(&format!(
@@ -321,7 +379,18 @@ impl Executor {
         let file_path = download_dir.join(&final_filename);
         let total_size = response.content_length().unwrap_or(0);
 
+        // 确保下载目录存在
+        fs::create_dir_all(download_dir).map_err(|e| format!("创建下载目录失败: {}", e))?;
+
         let mut file = File::create(&file_path).map_err(|e| format!("创建文件失败: {}", e))?;
+
+        // 更新进度状态中的 total
+        if let Ok(mut p) = progress.lock() {
+            if let Some(state) = p.get_mut(item_id) {
+                state.total = total_size;
+                state.start_time = Instant::now();
+            }
+        }
 
         // 分块下载，实时更新进度
         let mut downloaded: u64 = 0;
@@ -334,6 +403,13 @@ impl Executor {
         };
 
         loop {
+            // 检查是否被取消
+            if cancelled.load(Ordering::Relaxed) {
+                drop(file);
+                let _ = fs::remove_file(&file_path);
+                return Err("下载已取消".to_string());
+            }
+
             let n = response.read(&mut buffer).map_err(|e| format!("读取数据失败: {}", e))?;
             if n == 0 {
                 break;
@@ -350,9 +426,9 @@ impl Executor {
             downloaded += n as u64;
 
             // 更新进度
-            if total_size > 0 {
-                if let Ok(mut p) = progress.lock() {
-                    p.insert(item_id.to_string(), downloaded as f32 / total_size as f32);
+            if let Ok(mut p) = progress.lock() {
+                if let Some(state) = p.get_mut(item_id) {
+                    state.downloaded = downloaded;
                 }
             }
         }
@@ -510,10 +586,20 @@ impl Executor {
             .unwrap_or(false)
     }
 
-    pub fn get_progress(&self, item_id: &str) -> Option<f32> {
+    /// 获取下载状态
+    pub fn get_download_state(&self, item_id: &str) -> Option<DownloadState> {
         self.progress.lock()
             .ok()
-            .and_then(|p| p.get(item_id).copied())
+            .and_then(|p| p.get(item_id).cloned())
+    }
+
+    /// 取消下载
+    pub fn cancel_download(&self, item_id: &str) {
+        if let Ok(p) = self.progress.lock() {
+            if let Some(state) = p.get(item_id) {
+                state.cancelled.store(true, Ordering::Relaxed);
+            }
+        }
     }
 }
 

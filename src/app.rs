@@ -5,6 +5,17 @@ use crate::i18n::{I18n, Language};
 use crate::logger::Logger;
 use crate::model::{Action, Category, Item, CATEGORIES, ITEMS};
 
+/// 格式化下载速度
+fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec < 1024.0 {
+        format!("{:.0} B/s", bytes_per_sec)
+    } else if bytes_per_sec < 1024.0 * 1024.0 {
+        format!("{:.1} KB/s", bytes_per_sec / 1024.0)
+    } else {
+        format!("{:.2} MB/s", bytes_per_sec / 1024.0 / 1024.0)
+    }
+}
+
 pub struct App {
     search_query: String,
     selected_category: Option<&'static str>,
@@ -212,11 +223,23 @@ impl eframe::App for App {
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 // 检查是否正在下载
-                                if let Some(progress) = self.executor.get_progress(item.id) {
+                                if let Some(state) = self.executor.get_download_state(item.id) {
+                                    // 取消按钮
+                                    if ui.small_button("✕").clicked() {
+                                        self.executor.cancel_download(item.id);
+                                        self.logger.log(&format!("取消下载: {}", item.name));
+                                    }
+
+                                    // 速度显示
+                                    let speed = state.speed();
+                                    let speed_text = format_speed(speed);
+                                    ui.label(egui::RichText::new(speed_text).small());
+
+                                    // 进度条
                                     ui.add(
-                                        egui::ProgressBar::new(progress)
+                                        egui::ProgressBar::new(state.progress())
                                             .desired_width(80.0)
-                                            .text(format!("{:.0}%", progress * 100.0))
+                                            .text(format!("{:.0}%", state.progress() * 100.0))
                                     );
                                 } else {
                                     // 普通按钮
