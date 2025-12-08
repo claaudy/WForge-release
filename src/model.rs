@@ -383,7 +383,171 @@ pub const ITEMS: &[Item] = &[
         category: "shell",
         tags: &["visual", "视觉", "性能", "优化", "performance"],
         action: Action::PowerShell {
-            script: r#"Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name 'VisualFXSetting' -Value 3 -Type DWord; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'FontSmoothing' -Value '2' -Type String; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'FontSmoothingType' -Value 2 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'IconsOnly' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ListviewAlphaSelect' -Value 1 -Type DWord; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]](0x9E,0x3E,0x07,0x80,0x12,0x00,0x00,0x00)) -Type Binary; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop\WindowMetrics' -Name 'MinAnimate' -Value '0' -Type String; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -Type String; Add-Type 'using System; using System.Runtime.InteropServices; public class WinAPI { [DllImport(\"user32.dll\")] public static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d); }'; [WinAPI]::SystemParametersInfo(0x103F, 0, [IntPtr]::Zero, 0x02); Write-Host '视觉效果已优化'"#,
+            script: r#"Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name 'VisualFXSetting' -Value 3 -Type DWord; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'FontSmoothing' -Value '2' -Type String; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'FontSmoothingType' -Value 2 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'IconsOnly' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ListviewAlphaSelect' -Value 1 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ListviewShadow' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'TaskbarAnimations' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]](0x90,0x32,0x07,0x80,0x10,0x00,0x00,0x00)) -Type Binary; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop\WindowMetrics' -Name 'MinAnimate' -Value '0' -Type String; Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'DragFullWindows' -Value '0' -Type String; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'EnableAeroPeek' -Value 0 -Type DWord; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\DWM' -Name 'AlwaysHibernateThumbnails' -Value 0 -Type DWord; $code = @'
+using System;
+using System.Runtime.InteropServices;
+public class WinAPI {
+    [DllImport("user32.dll")]
+    public static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint d);
+}
+'@; Add-Type -TypeDefinition $code; [WinAPI]::SystemParametersInfo(0x103F, 0, [IntPtr]::Zero, 0x02); Write-Host '视觉效果已优化'"#,
+            hidden: false,
+        },
+        require_admin: false,
+    },
+    // 隐私与遥测
+    Item {
+        id: "disable_cortana",
+        name: "禁用 Cortana",
+        name_en: "Disable Cortana",
+        description: "关闭 Cortana 语音助手",
+        description_en: "Disable Cortana voice assistant",
+        category: "shell",
+        tags: &["privacy", "隐私", "cortana", "语音"],
+        action: Action::PowerShell {
+            script: r#"$path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name 'AllowCortana' -Value 0 -Type DWord -Force; Write-Host 'Cortana 已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_ad_id",
+        name: "禁用广告 ID",
+        name_en: "Disable Advertising ID",
+        description: "关闭个性化广告追踪",
+        description_en: "Disable personalized advertising tracking",
+        category: "shell",
+        tags: &["privacy", "隐私", "广告", "advertising"],
+        action: Action::PowerShell {
+            script: r#"Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' -Name 'Enabled' -Value 0 -Type DWord -Force; $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name 'DisabledByGroupPolicy' -Value 1 -Type DWord -Force; Write-Host '广告 ID 已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_activity_history",
+        name: "禁用活动历史",
+        name_en: "Disable Activity History",
+        description: "关闭 Windows 活动历史记录",
+        description_en: "Disable Windows activity history",
+        category: "shell",
+        tags: &["privacy", "隐私", "活动", "history"],
+        action: Action::PowerShell {
+            script: r#"$path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name 'EnableActivityFeed' -Value 0 -Type DWord -Force; Set-ItemProperty -Path $path -Name 'PublishUserActivities' -Value 0 -Type DWord -Force; Set-ItemProperty -Path $path -Name 'UploadUserActivities' -Value 0 -Type DWord -Force; Write-Host '活动历史已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_location",
+        name: "禁用位置追踪",
+        name_en: "Disable Location Tracking",
+        description: "关闭 Windows 位置服务",
+        description_en: "Disable Windows location services",
+        category: "shell",
+        tags: &["privacy", "隐私", "位置", "location"],
+        action: Action::PowerShell {
+            script: r#"Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location' -Name 'Value' -Value 'Deny' -Type String -Force; $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name 'DisableLocation' -Value 1 -Type DWord -Force; Write-Host '位置追踪已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    // 界面简化
+    Item {
+        id: "hide_search_box",
+        name: "隐藏搜索框",
+        name_en: "Hide Search Box",
+        description: "任务栏只显示搜索图标",
+        description_en: "Show only search icon on taskbar",
+        category: "shell",
+        tags: &["ui", "界面", "搜索", "taskbar"],
+        action: Action::PowerShell {
+            script: r#"Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' -Name 'SearchboxTaskbarMode' -Value 1 -Type DWord -Force; Stop-Process -Name explorer -Force; Write-Host '搜索框已隐藏 (仅显示图标)'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_copilot",
+        name: "禁用 Copilot",
+        name_en: "Disable Copilot",
+        description: "关闭 Windows Copilot",
+        description_en: "Disable Windows Copilot",
+        category: "shell",
+        tags: &["ui", "界面", "copilot", "ai"],
+        action: Action::PowerShell {
+            script: r#"$path = 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name 'TurnOffWindowsCopilot' -Value 1 -Type DWord -Force; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ShowCopilotButton' -Value 0 -Type DWord -Force; Write-Host 'Copilot 已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_lock_screen_ads",
+        name: "禁用锁屏广告",
+        name_en: "Disable Lock Screen Ads",
+        description: "关闭锁屏界面的提示和广告",
+        description_en: "Disable tips and ads on lock screen",
+        category: "shell",
+        tags: &["ui", "界面", "锁屏", "广告"],
+        action: Action::PowerShell {
+            script: r#"Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'RotatingLockScreenOverlayEnabled' -Value 0 -Type DWord -Force; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'SubscribedContent-338387Enabled' -Value 0 -Type DWord -Force; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'SubscribedContent-338388Enabled' -Value 0 -Type DWord -Force; Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager' -Name 'SubscribedContent-338389Enabled' -Value 0 -Type DWord -Force; Write-Host '锁屏广告已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "classic_context_menu",
+        name: "经典右键菜单",
+        name_en: "Classic Context Menu",
+        description: "Win11 恢复经典右键菜单",
+        description_en: "Restore classic context menu on Win11",
+        category: "shell",
+        tags: &["ui", "界面", "右键", "context menu", "win11"],
+        action: Action::PowerShell {
+            script: r#"$path = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'; if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name '(Default)' -Value '' -Type String -Force; Stop-Process -Name explorer -Force; Write-Host '经典右键菜单已启用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    // 性能优化
+    Item {
+        id: "disable_hibernate",
+        name: "禁用休眠",
+        name_en: "Disable Hibernate",
+        description: "关闭休眠功能，释放磁盘空间",
+        description_en: "Disable hibernate to free disk space",
+        category: "shell",
+        tags: &["performance", "性能", "休眠", "hibernate", "磁盘"],
+        action: Action::PowerShell {
+            script: r#"powercfg /h off; Write-Host '休眠已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "disable_sysmain",
+        name: "禁用 SysMain",
+        name_en: "Disable SysMain",
+        description: "关闭 SysMain (Superfetch) 服务，适合 SSD 用户",
+        description_en: "Disable SysMain (Superfetch) service, recommended for SSD users",
+        category: "shell",
+        tags: &["performance", "性能", "sysmain", "superfetch", "ssd"],
+        action: Action::PowerShell {
+            script: r#"Stop-Service SysMain -Force -ErrorAction SilentlyContinue; Set-Service SysMain -StartupType Disabled -ErrorAction SilentlyContinue; Write-Host 'SysMain 已禁用'"#,
+            hidden: false,
+        },
+        require_admin: true,
+    },
+    Item {
+        id: "high_performance_power",
+        name: "高性能电源计划",
+        name_en: "High Performance Power Plan",
+        description: "切换到高性能电源模式",
+        description_en: "Switch to high performance power plan",
+        category: "shell",
+        tags: &["performance", "性能", "电源", "power"],
+        action: Action::PowerShell {
+            script: r#"powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c; Write-Host '已切换到高性能电源计划'"#,
             hidden: false,
         },
         require_admin: true,
