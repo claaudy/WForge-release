@@ -4148,6 +4148,7 @@ dependencies = [
  "dirs",
  "eframe",
  "embed-resource",
+ "encoding_rs",
  "futures-util",
  "hex",
  "image",

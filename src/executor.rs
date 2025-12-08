@@ -21,10 +21,10 @@ pub struct DownloadState {
 }
 
 impl DownloadState {
-    pub fn new(total: u64) -> Self {
+    pub fn new() -> Self {
         Self {
             downloaded: 0,
-            total,
+            total: 0,
             start_time: Instant::now(),
             cancelled: Arc::new(AtomicBool::new(false)),
         }
@@ -164,7 +164,7 @@ impl Executor {
 
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            let mut state = DownloadState::new(0);
+            let mut state = DownloadState::new();
             state.cancelled = cancelled.clone();
             p.insert(item_id.clone(), state);
         }
@@ -259,7 +259,7 @@ impl Executor {
 
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            let mut state = DownloadState::new(0);
+            let mut state = DownloadState::new();
             state.cancelled = cancelled.clone();
             p.insert(item_id.clone(), state);
         }
@@ -356,7 +356,7 @@ impl Executor {
 
         // 标记开始下载
         if let Ok(mut p) = progress.lock() {
-            let mut state = DownloadState::new(0);
+            let mut state = DownloadState::new();
             state.cancelled = cancelled.clone();
             p.insert(item_id.clone(), state);
         }
@@ -509,8 +509,41 @@ impl Executor {
                 hidden, require_admin, script
             ));
 
+            // 统一使用 Base64 编码脚本，避免引号转义问题
+            #[cfg(windows)]
+            let base64_script = {
+                use std::io::Write;
+                let mut encoded = Vec::new();
+                for c in script.encode_utf16() {
+                    let _ = encoded.write_all(&c.to_le_bytes());
+                }
+                base64_encode(&encoded)
+            };
+
+            #[cfg(not(windows))]
+            let base64_script = String::new();
+
             let mut cmd = Command::new("powershell");
-            cmd.args(["-ExecutionPolicy", "Bypass", "-Command", &script]);
+
+            if require_admin {
+                // 管理员模式：通过 Start-Process -Verb RunAs 提权
+                let ps_script = format!(
+                    "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -EncodedCommand {}'",
+                    base64_script
+                );
+                cmd.args(["-ExecutionPolicy", "Bypass", "-Command", &ps_script]);
+                logger.log(&format!(
+                    "[PowerShell] 管理员模式 | encoded_script_len={}",
+                    base64_script.len()
+                ));
+            } else {
+                // 非管理员模式：直接使用 EncodedCommand
+                cmd.args(["-ExecutionPolicy", "Bypass", "-EncodedCommand", &base64_script]);
+                logger.log(&format!(
+                    "[PowerShell] 普通模式 | encoded_script_len={}",
+                    base64_script.len()
+                ));
+            }
 
             if hidden {
                 #[cfg(windows)]
@@ -521,81 +554,14 @@ impl Executor {
                 logger.log("[PowerShell] 已设置隐藏窗口模式");
             }
 
-            // 管理员权限需要通过 runas
-            if require_admin {
-                #[cfg(windows)]
-                {
-                    // 使用 Base64 编码脚本，避免引号转义问题
-                    use std::io::Write;
-                    let mut encoded = Vec::new();
-                    for c in script.encode_utf16() {
-                        let _ = encoded.write_all(&c.to_le_bytes());
-                    }
-                    let base64_script = base64_encode(&encoded);
-
-                    let ps_script = format!(
-                        "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -EncodedCommand {}'",
-                        base64_script
-                    );
-
-                    logger.log(&format!(
-                        "[PowerShell] 管理员模式 | encoded_script_len={} | 完整命令=powershell -ExecutionPolicy Bypass -Command \"{}\"",
-                        base64_script.len(),
-                        ps_script.replace('"', "\\\"")
-                    ));
-
-                    let mut admin_cmd = Command::new("powershell");
-                    admin_cmd.args(["-ExecutionPolicy", "Bypass", "-Command", &ps_script]);
-
-                    match admin_cmd.output() {
-                        Ok(output) => {
-                            let elapsed = start_time.elapsed();
-                            let stdout = String::from_utf8_lossy(&output.stdout);
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            let exit_code = output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
-
-                            if output.status.success() {
-                                logger.log(&format!(
-                                    "[PowerShell] 执行成功 | exit_code={} | elapsed={:.2}s",
-                                    exit_code, elapsed.as_secs_f64()
-                                ));
-                            } else {
-                                logger.error(&format!(
-                                    "[PowerShell] 执行失败 | exit_code={} | elapsed={:.2}s",
-                                    exit_code, elapsed.as_secs_f64()
-                                ));
-                            }
-
-                            if !stdout.is_empty() {
-                                logger.log(&format!("[PowerShell] stdout: {}", stdout.trim()));
-                            }
-                            if !stderr.is_empty() {
-                                logger.error(&format!("[PowerShell] stderr: {}", stderr.trim()));
-                            }
-                        }
-                        Err(e) => {
-                            let elapsed = start_time.elapsed();
-                            logger.error(&format!(
-                                "[PowerShell] 启动失败 | error={} | elapsed={:.2}s",
-                                e, elapsed.as_secs_f64()
-                            ));
-                        }
-                    }
-                    return;
-                }
-            }
-
-            // 非管理员模式执行
-            logger.log(&format!(
-                "[PowerShell] 普通模式 | 完整命令=powershell -ExecutionPolicy Bypass -Command \"{}\"",
-                script.replace('"', "\\\"")
-            ));
-
             match cmd.output() {
                 Ok(output) => {
                     let elapsed = start_time.elapsed();
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // Windows 中文系统 PowerShell 默认输出 GBK
+                    let (stdout_decoded, _, _) = encoding_rs::GBK.decode(&output.stdout);
+                    let (stderr_decoded, _, _) = encoding_rs::GBK.decode(&output.stderr);
+                    let stdout = stdout_decoded.trim();
+                    let stderr = stderr_decoded.trim();
                     let exit_code = output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
 
                     if output.status.success() {
@@ -611,10 +577,10 @@ impl Executor {
                     }
 
                     if !stdout.is_empty() {
-                        logger.log(&format!("[PowerShell] stdout: {}", stdout.trim()));
+                        logger.log(&format!("[PowerShell] stdout: {}", stdout));
                     }
                     if !stderr.is_empty() {
-                        logger.error(&format!("[PowerShell] stderr: {}", stderr.trim()));
+                        logger.error(&format!("[PowerShell] stderr: {}", stderr));
                     }
                 }
                 Err(e) => {
