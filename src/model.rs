@@ -99,10 +99,10 @@ pub const ITEMS: &[Item] = &[
         description_en: "Download WeChat PC client",
         category: "common",
         tags: &["chat", "聊天", "微信", "wechat"],
-        action: Action::Download {
-            url: "https://dldir1v6.qq.com/weixin/Windows/WeChatSetup.exe",
+        action: Action::WebScrape {
+            page_url: "https://pc.weixin.qq.com/",
+            link_regex: r#"id="downloadButton" href="([^"]+)""#,
             filename: Some("WeChatSetup.exe"),
-            sha256: None,
         },
         require_admin: false,
     },
@@ -183,6 +183,21 @@ pub const ITEMS: &[Item] = &[
         require_admin: false,
     },
     Item {
+        id: "listary",
+        name: "Listary",
+        name_en: "Listary",
+        description: "下载 Listary 文件搜索工具",
+        description_en: "Download Listary file search tool",
+        category: "tool",
+        tags: &["search", "搜索", "文件", "listary"],
+        action: Action::Download {
+            url: "https://dl.listary.net/Listary.exe",
+            filename: Some("Listary.exe"),
+            sha256: None,
+        },
+        require_admin: false,
+    },
+    Item {
         id: "snipaste",
         name: "Snipaste",
         name_en: "Snipaste",
@@ -213,6 +228,21 @@ pub const ITEMS: &[Item] = &[
         require_admin: false,
     },
     Item {
+        id: "flclash",
+        name: "FlClash",
+        name_en: "FlClash",
+        description: "下载 FlClash 代理工具",
+        description_en: "Download FlClash proxy tool",
+        category: "tool",
+        tags: &["proxy", "代理", "clash", "vpn", "flutter"],
+        action: Action::GitHubRelease {
+            repo: "chen08209/FlClash",
+            asset_pattern: "*windows-amd64-setup.exe",
+            filename: Some("FlClash.exe"),
+        },
+        require_admin: false,
+    },
+    Item {
         id: "huorong",
         name: "火绒安全",
         name_en: "Huorong Security",
@@ -221,7 +251,7 @@ pub const ITEMS: &[Item] = &[
         category: "tool",
         tags: &["security", "安全", "杀毒", "火绒"],
         action: Action::Download {
-            url: "https://down-tencent.huorong.cn/sysdiag-all-x64-6.0.8.3-2025.12.06.1.exe",
+            url: "https://www.huorong.cn/product/downloadHr60.php?pro=hr60&plat=x64UrlAll",
             filename: Some("HuorongSetup.exe"),
             sha256: None,
         },
@@ -265,10 +295,10 @@ pub const ITEMS: &[Item] = &[
         description_en: "Download Tubatool",
         category: "tool",
         tags: &["hardware", "硬件", "检测"],
-        action: Action::Download {
-            url: "https://apac.tualatin.club/%E5%9B%BE%E5%90%A7%E5%B7%A5%E5%85%B7%E7%AE%B12025.07R2%E5%AE%89%E8%A3%85%E5%8C%85.exe",
+        action: Action::WebScrape {
+            page_url: "https://www.tbtool.cn/download/index.html",
+            link_regex: r#"href="(https://apac\.tualatin\.club/[^"]+\.exe)""#,
             filename: Some("tubatool.exe"),
-            sha256: None,
         },
         require_admin: false,
     },
