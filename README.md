@@ -106,6 +106,8 @@
 
 - Windows 10 或更高版本
 
+> **提示**：若使用 LTSC 或精简系统无法启动，请以管理员身份运行 `wsreset -i` 安装 Microsoft Store 后重试。
+
 ---
 
 ## Star History
