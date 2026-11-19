@@ -45,6 +45,23 @@
 
 ---
 
+## 从源码构建
+
+在 Windows 上安装 [Rust（rustup）](https://rustup.rs/) 和 [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)，并在 Build Tools 中选择「使用 C++ 的桌面开发」（包含 MSVC 工具链和 Windows SDK）。
+
+在仓库根目录运行：
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+cargo build --locked --release --target x86_64-pc-windows-msvc
+```
+
+生成的单文件程序位于 `target\x86_64-pc-windows-msvc\release\wforge.exe`。
+
+项目采用 [MIT 许可证](LICENSE)；内置的霞鹜文楷轻便版（LXGW WenKai Lite）字体采用 [SIL Open Font License 1.1](assets/OFL-LXGWWenKaiLite.txt)。
+
+---
+
 ## 内置软件
 
 ### 常用
